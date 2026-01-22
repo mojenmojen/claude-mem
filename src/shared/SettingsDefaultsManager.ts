@@ -13,7 +13,8 @@ import { DEFAULT_OBSERVATION_TYPES_STRING, DEFAULT_OBSERVATION_CONCEPTS_STRING }
 // logger.ts depends on SettingsDefaultsManager for its initialization
 
 // SECURITY: Settings file permissions (owner read/write only)
-// Protects API keys from other users on shared systems
+// Protects API keys from other users on shared systems.
+// On Unix/macOS: Enforced via 0600 (rw-------). On Windows: Limited effect (read-only flag only).
 const SETTINGS_FILE_MODE = 0o600;
 
 /**
@@ -29,12 +30,13 @@ export function writeSettingsFileSecure(filePath: string, content: string): void
   try {
     chmodSync(filePath, SETTINGS_FILE_MODE);
   } catch (error) {
-    // chmod is not supported on Windows - this is expected
+    // chmod has limited effect on Windows (read-only flag only, not Unix permissions)
+    // so we skip error reporting there - the write already succeeded
     if (process.platform === 'win32') {
       return;
     }
-    // On Unix/macOS, chmod failure is unexpected and should be logged
-    // API keys may be exposed to other users on shared systems
+    // On Unix/macOS, chmod failure indicates a system issue (e.g., file owned by
+    // different user, restrictive parent permissions) and should be logged
     console.warn(
       '[SETTINGS] WARNING: Failed to set secure permissions (0600) on settings file.',
       'API keys may be readable by other users.',
