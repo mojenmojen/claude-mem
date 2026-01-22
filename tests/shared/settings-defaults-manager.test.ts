@@ -12,10 +12,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { SettingsDefaultsManager } from '../../src/shared/SettingsDefaultsManager.js';
+import { SettingsDefaultsManager, writeSettingsFileSecure } from '../../src/shared/SettingsDefaultsManager.js';
 
 describe('SettingsDefaultsManager', () => {
   let tempDir: string;
@@ -328,6 +328,79 @@ describe('SettingsDefaultsManager', () => {
 
     it('should return false for non-"true" string', () => {
       expect(SettingsDefaultsManager.getBool('CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE')).toBe(false);
+    });
+  });
+
+  describe('writeSettingsFileSecure', () => {
+    it('should write file with 0600 permissions on new file', () => {
+      const content = '{"test": true}';
+
+      writeSettingsFileSecure(settingsPath, content);
+
+      // Verify file was created
+      expect(existsSync(settingsPath)).toBe(true);
+
+      // Verify permissions (skip on Windows where chmod has no effect)
+      if (process.platform !== 'win32') {
+        const stats = statSync(settingsPath);
+        // Extract permission bits (last 9 bits: rwxrwxrwx)
+        const permissions = stats.mode & 0o777;
+        expect(permissions).toBe(0o600);
+      }
+    });
+
+    it('should write correct content to file', () => {
+      const content = '{"CLAUDE_MEM_MODEL": "test-model"}';
+
+      writeSettingsFileSecure(settingsPath, content);
+
+      const written = readFileSync(settingsPath, 'utf-8');
+      expect(written).toBe(content);
+    });
+
+    it('should fix permissions on existing file with wrong mode', () => {
+      // Skip on Windows where chmod has no effect
+      if (process.platform === 'win32') {
+        return;
+      }
+
+      // Create file with permissive permissions (world-readable)
+      writeFileSync(settingsPath, 'old content', { mode: 0o644 });
+
+      // Verify file has permissive permissions
+      let stats = statSync(settingsPath);
+      expect(stats.mode & 0o777).toBe(0o644);
+
+      // Write with secure function
+      writeSettingsFileSecure(settingsPath, 'new content');
+
+      // Verify permissions were corrected to 0600
+      stats = statSync(settingsPath);
+      expect(stats.mode & 0o777).toBe(0o600);
+    });
+
+    it('should overwrite existing file content', () => {
+      writeFileSync(settingsPath, 'original content');
+
+      writeSettingsFileSecure(settingsPath, 'updated content');
+
+      const content = readFileSync(settingsPath, 'utf-8');
+      expect(content).toBe('updated content');
+    });
+
+    it('should handle JSON content correctly', () => {
+      const settings = {
+        CLAUDE_MEM_MODEL: 'test-model',
+        CLAUDE_MEM_WORKER_PORT: '12345',
+      };
+      const content = JSON.stringify(settings, null, 2);
+
+      writeSettingsFileSecure(settingsPath, content);
+
+      const written = readFileSync(settingsPath, 'utf-8');
+      const parsed = JSON.parse(written);
+      expect(parsed.CLAUDE_MEM_MODEL).toBe('test-model');
+      expect(parsed.CLAUDE_MEM_WORKER_PORT).toBe('12345');
     });
   });
 });

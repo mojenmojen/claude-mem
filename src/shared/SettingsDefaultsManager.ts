@@ -19,6 +19,8 @@ const SETTINGS_FILE_MODE = 0o600;
 /**
  * Write settings file with secure permissions (0600)
  * SECURITY: Restricts file access to owner only, protecting API keys
+ * @param filePath - Absolute path to the settings file
+ * @param content - JSON string content to write
  */
 export function writeSettingsFileSecure(filePath: string, content: string): void {
   writeFileSync(filePath, content, { encoding: 'utf-8', mode: SETTINGS_FILE_MODE });
@@ -26,8 +28,19 @@ export function writeSettingsFileSecure(filePath: string, content: string): void
   // (writeFileSync mode only applies to new files)
   try {
     chmodSync(filePath, SETTINGS_FILE_MODE);
-  } catch {
-    // chmod may fail on some filesystems (e.g., Windows), continue anyway
+  } catch (error) {
+    // chmod is not supported on Windows - this is expected
+    if (process.platform === 'win32') {
+      return;
+    }
+    // On Unix/macOS, chmod failure is unexpected and should be logged
+    // API keys may be exposed to other users on shared systems
+    console.warn(
+      '[SETTINGS] WARNING: Failed to set secure permissions (0600) on settings file.',
+      'API keys may be readable by other users.',
+      filePath,
+      error instanceof Error ? error.message : error
+    );
   }
 }
 
